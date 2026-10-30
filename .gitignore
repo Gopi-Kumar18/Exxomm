@@ -1,0 +1,78 @@
+# This root .gitignore is a catch-all safety net for the whole repo
+# (exxomm-be/ and exxomm-fe/ don't have their own .gitignore files, so
+# everything for them is also handled here).
+
+# Node
+**/node_modules/
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+.vite/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Docker
+docker-compose.override.yml
+*.tar
+*.tar.gz
+
+# Terraform (terraform-infra/ and any nested module) -- state and local
+# provider/plugin caches are machine-specific and may contain sensitive
+# values, so they're never committed. .terraform.lock.hcl is NOT ignored --
+# that file should be committed so everyone resolves the same provider
+# versions.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+
+# Environment & secrets -- every .env file anywhere in the repo, except
+# the checked-in .env.example templates.
+.env
+.env.*
+!.env.example
+!*/.env.example
+*.pem
+*.key
+*.p12
+*.crt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Binary / executables
+*.exe
+*.dll
+*.so
+
+# Logs
+*.log
+debug.log
+
+# Misc
+/.history
+
+.claude
+
+.codemie
+
+raw_images/

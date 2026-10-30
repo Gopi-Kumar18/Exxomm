@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and adjust as needed. No secrets go here --
+# Mongo/JWT values live in AWS SSM Parameter Store under ssm_parameter_prefix,
+# managed by Jenkins credentials, not by Terraform.
+
+aws_region    = "ap-south-1"
+project_name  = "exxomm"
+instance_type = "t3.micro"

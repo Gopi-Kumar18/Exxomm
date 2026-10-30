@@ -1,0 +1,142 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+
+  parameters {
+    string(name: 'AWS_REGION', defaultValue: 'ap-south-1', description: 'AWS region (terraform var.aws_region)')
+    string(name: 'BACKEND_ECR_REPO', defaultValue: '', description: 'terraform output backend_ecr_repository_url')
+    string(name: 'FRONTEND_ECR_REPO', defaultValue: '', description: 'terraform output frontend_ecr_repository_url')
+    string(name: 'BACKEND_INSTANCE_ID', defaultValue: '', description: 'terraform output backend_instance_id')
+    string(name: 'FRONTEND_INSTANCE_ID', defaultValue: '', description: 'terraform output frontend_instance_id')
+    string(name: 'REVERSE_PROXY_URL', defaultValue: '', description: 'http://<terraform output reverse_proxy_public_ip>')
+  }
+
+  environment {
+    IMAGE_TAG = "${env.BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    // No lint script exists in either app yet -- this confirms the lockfiles
+    // actually install cleanly before spending time building/testing.
+    stage('Validate') {
+      parallel {
+        stage('Backend') {
+          steps {
+            dir('exxomm-be') {
+              sh 'docker run --rm -v "$PWD":/app -w /app node:18-alpine npm install'
+            }
+          }
+        }
+        stage('Frontend') {
+          steps {
+            dir('exxomm-fe') {
+              sh 'docker run --rm -v "$PWD":/app -w /app node:18-alpine npm install'
+            }
+          }
+        }
+      }
+    }
+
+    // Runs against source directly (not the production image, which has no
+    // devDependencies) so a failing test never produces a pushed image.
+    stage('Test') {
+      parallel {
+        stage('Backend Tests') {
+          steps {
+            dir('exxomm-be') {
+              sh 'docker run --rm -v "$PWD":/app -w /app node:18-alpine sh -c "npm install && npm test"'
+            }
+          }
+        }
+        stage('Frontend Tests') {
+          steps {
+            dir('exxomm-fe') {
+              sh 'docker run --rm -v "$PWD":/app -w /app node:18-alpine sh -c "npm install && npm test"'
+            }
+          }
+        }
+      }
+    }
+
+    stage('ECR Login') {
+      steps {
+        sh "aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${params.BACKEND_ECR_REPO.split('/')[0]}"
+      }
+    }
+
+    // Separate build/push per app so one image failing doesn't silently
+    // leave the other half-deployed later.
+    stage('Build & Push') {
+      parallel {
+        stage('Backend Image') {
+          steps {
+            dir('exxomm-be') {
+              sh """
+                docker build -t ${params.BACKEND_ECR_REPO}:${IMAGE_TAG} -t ${params.BACKEND_ECR_REPO}:latest .
+                docker push ${params.BACKEND_ECR_REPO}:${IMAGE_TAG}
+                docker push ${params.BACKEND_ECR_REPO}:latest
+              """
+            }
+          }
+        }
+        stage('Frontend Image') {
+          steps {
+            dir('exxomm-fe') {
+              sh """
+                docker build -t ${params.FRONTEND_ECR_REPO}:${IMAGE_TAG} -t ${params.FRONTEND_ECR_REPO}:latest .
+                docker push ${params.FRONTEND_ECR_REPO}:${IMAGE_TAG}
+                docker push ${params.FRONTEND_ECR_REPO}:latest
+              """
+            }
+          }
+        }
+      }
+    }
+
+    // Deploys over AWS SSM Run Command -- no SSH/bastion. Each target
+    // instance's own IAM role (not Jenkins) pulls from ECR and reads its
+    // secrets from SSM Parameter Store.
+    stage('Deploy') {
+      parallel {
+        stage('Deploy Backend') {
+          steps {
+            sh "jenkins/scripts/deploy-via-ssm.sh '${params.BACKEND_INSTANCE_ID}' jenkins/scripts/deploy-backend.sh '${params.BACKEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
+          }
+        }
+        stage('Deploy Frontend') {
+          steps {
+            sh "jenkins/scripts/deploy-via-ssm.sh '${params.FRONTEND_INSTANCE_ID}' jenkins/scripts/deploy-frontend.sh '${params.FRONTEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
+          }
+        }
+      }
+    }
+
+    stage('Health Check') {
+      steps {
+        sh "jenkins/scripts/health-check.sh '${params.REVERSE_PROXY_URL}'"
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Deployed build ${IMAGE_TAG} and verified healthy."
+    }
+    failure {
+      echo "Pipeline failed. :latest in ECR only moves after a successful push, so re-running Deploy with an older IMAGE_TAG rolls back manually if needed."
+    }
+    always {
+      sh 'docker image prune -f || true'
+    }
+  }
+}
