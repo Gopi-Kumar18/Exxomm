@@ -4,8 +4,33 @@ variable "project_name" {
 }
 
 variable "instance_type" {
-  type    = string
-  default = "t3.micro"
+  description = "Backend's instance type."
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "colocate_db_with_backend" {
+  description = "TEMPORARY vCPU-quota workaround: true runs Mongo as a container on the backend instance instead of its own EC2, so no 5th instance is launched. Set back to false once the account's vCPU quota increase is approved, to restore the dedicated mongo instance (the zero-trust data tier)."
+  type        = bool
+  default     = true
+}
+
+variable "mongo_instance_type" {
+  description = "Mongo's own instance type. t3.micro (2 vCPU) while the account's vCPU quota increase is pending; frontend/reverse-proxy are downsized to t2.micro in the meantime to make room for it under the current 8-vCPU quota."
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "frontend_instance_type" {
+  description = "Frontend's instance type. t2.micro isn't launchable on this account (Free Plan restriction blocks it), so this stays t3.micro until the vCPU quota increase is approved."
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "reverse_proxy_instance_type" {
+  description = "Reverse-proxy's instance type. t2.micro isn't launchable on this account (Free Plan restriction blocks it), so this stays t3.micro until the vCPU quota increase is approved."
+  type        = string
+  default     = "t3.micro"
 }
 
 variable "jenkins_instance_type" {

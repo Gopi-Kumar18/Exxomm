@@ -11,7 +11,7 @@ output "backend_private_ip" {
 }
 
 output "mongo_private_ip" {
-  value = aws_instance.mongo.private_ip
+  value = var.colocate_db_with_backend ? aws_instance.backend.private_ip : aws_instance.mongo[0].private_ip
 }
 
 output "jenkins_public_ip" {

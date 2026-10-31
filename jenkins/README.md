@@ -25,25 +25,18 @@ them.
 
 ## One-time setup
 
-### 1. Apply the Terraform infra
-
-```
-cd terraform-infra
-terraform init
-terraform apply
-```
-
-Keep the outputs handy -- they feed the pipeline parameters below:
-`backend_ecr_repository_url`, `frontend_ecr_repository_url`,
-`backend_instance_id`, `frontend_instance_id`, `reverse_proxy_public_ip`.
-
-### 2. Push the app secrets into SSM Parameter Store
+### 1. Push the app secrets into SSM Parameter Store
 
 Terraform creates the IAM permissions to *read* `/exxomm/prod/*`, but never
 writes the values -- that's deliberately a manual/Jenkins-credentials step,
 matching requirement #7 (secrets via Jenkins credentials + IAM roles, not
-hardcoded or Terraform state). Run once (from anywhere with AWS CLI access
-and permission to write SSM parameters, e.g. your own machine or the
+hardcoded or Terraform state). **This has to happen before `terraform
+apply`**, not after: the Mongo EC2's `user_data` reads `mongo_user`/
+`mongo_pass`/`mongo_db_name` from SSM at boot to start the `mongo` container
+immediately, so if those parameters don't exist yet, that boot script fails
+and Mongo never comes up -- silently, since a failed `user_data` script
+doesn't fail `terraform apply` itself. Run once (from anywhere with AWS CLI
+access and permission to write SSM parameters, e.g. your own machine or the
 Jenkins box itself):
 
 ```bash
@@ -56,6 +49,18 @@ aws ssm put-parameter --region ap-south-1 --type SecureString --name /exxomm/pro
 `/exxomm/prod/mongo_host` is written automatically by Terraform (it's just
 the Mongo EC2's private IP, not a secret) and kept in sync on every
 `terraform apply`.
+
+### 2. Apply the Terraform infra
+
+```
+cd terraform-infra
+terraform init
+terraform apply
+```
+
+Keep the outputs handy -- they feed the pipeline parameters below:
+`backend_ecr_repository_url`, `frontend_ecr_repository_url`,
+`backend_instance_id`, `frontend_instance_id`, `reverse_proxy_public_ip`.
 
 ### 3. Jenkins job setup
 

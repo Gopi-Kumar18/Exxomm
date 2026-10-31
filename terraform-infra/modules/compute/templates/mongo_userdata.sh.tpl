@@ -13,9 +13,10 @@ systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service || true
 # Secrets are written to SSM by Jenkins/ops, never by Terraform -- this
 # instance's IAM role only grants read access to this one path.
 PREFIX="${ssm_parameter_prefix}"
-MONGO_USER=$(aws ssm get-parameter --name "$PREFIX/mongo_user" --with-decryption --query Parameter.Value --output text)
-MONGO_PASS=$(aws ssm get-parameter --name "$PREFIX/mongo_pass" --with-decryption --query Parameter.Value --output text)
-MONGO_DB_NAME=$(aws ssm get-parameter --name "$PREFIX/mongo_db_name" --with-decryption --query Parameter.Value --output text)
+REGION="${aws_region}"
+MONGO_USER=$(aws ssm get-parameter --region "$REGION" --name "$PREFIX/mongo_user" --with-decryption --query Parameter.Value --output text)
+MONGO_PASS=$(aws ssm get-parameter --region "$REGION" --name "$PREFIX/mongo_pass" --with-decryption --query Parameter.Value --output text)
+MONGO_DB_NAME=$(aws ssm get-parameter --region "$REGION" --name "$PREFIX/mongo_db_name" --with-decryption --query Parameter.Value --output text)
 
 docker volume create exxomm_db_volume
 

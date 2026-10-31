@@ -110,12 +110,12 @@ pipeline {
       parallel {
         stage('Deploy Backend') {
           steps {
-            sh "jenkins/scripts/deploy-via-ssm.sh '${params.BACKEND_INSTANCE_ID}' jenkins/scripts/deploy-backend.sh '${params.BACKEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
+            sh "bash jenkins/scripts/deploy-via-ssm.sh '${params.BACKEND_INSTANCE_ID}' jenkins/scripts/deploy-backend.sh '${params.BACKEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
           }
         }
         stage('Deploy Frontend') {
           steps {
-            sh "jenkins/scripts/deploy-via-ssm.sh '${params.FRONTEND_INSTANCE_ID}' jenkins/scripts/deploy-frontend.sh '${params.FRONTEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
+            sh "bash jenkins/scripts/deploy-via-ssm.sh '${params.FRONTEND_INSTANCE_ID}' jenkins/scripts/deploy-frontend.sh '${params.FRONTEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
           }
         }
       }
@@ -123,7 +123,7 @@ pipeline {
 
     stage('Health Check') {
       steps {
-        sh "jenkins/scripts/health-check.sh '${params.REVERSE_PROXY_URL}'"
+        sh "bash jenkins/scripts/health-check.sh '${params.REVERSE_PROXY_URL}'"
       }
     }
   }

@@ -66,6 +66,18 @@ resource "aws_security_group" "backend" {
     security_groups = [aws_security_group.reverse_proxy.id]
   }
 
+  # TEMPORARY vCPU-quota workaround: Mongo runs as a container on this same
+  # instance (see colocate_db_with_backend), so the backend app container
+  # needs to reach it over this instance's own private IP. Remove once the
+  # quota increase is approved and Mongo moves back to its own instance.
+  ingress {
+    description = "Mongo traffic from itself (temporary DB colocation on this instance)"
+    from_port   = var.mongo_port
+    to_port     = var.mongo_port
+    protocol    = "tcp"
+    self        = true
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

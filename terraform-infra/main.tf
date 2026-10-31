@@ -37,17 +37,21 @@ module "security" {
 module "compute" {
   source = "./modules/compute"
 
-  project_name           = var.project_name
-  instance_type          = var.instance_type
-  jenkins_instance_type  = var.jenkins_instance_type
-  backend_port           = var.backend_port
-  ssm_parameter_prefix   = var.ssm_parameter_prefix
-  public_subnet_id       = module.networking.public_subnet_ids[0]
-  private_app_subnet_id  = module.networking.private_app_subnet_ids[0]
-  private_data_subnet_id = module.networking.private_data_subnet_ids[0]
-  reverse_proxy_sg_id    = module.security.reverse_proxy_sg_id
-  frontend_sg_id         = module.security.frontend_sg_id
-  backend_sg_id          = module.security.backend_sg_id
-  data_sg_id             = module.security.data_sg_id
-  jenkins_sg_id          = module.security.jenkins_sg_id
+  project_name                = var.project_name
+  instance_type               = var.instance_type
+  colocate_db_with_backend    = var.colocate_db_with_backend
+  mongo_instance_type         = var.mongo_instance_type
+  frontend_instance_type      = var.frontend_instance_type
+  reverse_proxy_instance_type = var.reverse_proxy_instance_type
+  jenkins_instance_type       = var.jenkins_instance_type
+  backend_port                = var.backend_port
+  ssm_parameter_prefix        = var.ssm_parameter_prefix
+  public_subnet_id            = module.networking.public_subnet_ids[0]
+  private_app_subnet_id       = module.networking.private_app_subnet_ids[0]
+  private_data_subnet_id      = module.networking.private_data_subnet_ids[0]
+  reverse_proxy_sg_id         = module.security.reverse_proxy_sg_id
+  frontend_sg_id              = module.security.frontend_sg_id
+  backend_sg_id               = module.security.backend_sg_id
+  data_sg_id                  = module.security.data_sg_id
+  jenkins_sg_id               = module.security.jenkins_sg_id
 }

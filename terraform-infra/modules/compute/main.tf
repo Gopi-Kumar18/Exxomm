@@ -191,18 +191,24 @@ resource "aws_iam_instance_profile" "jenkins" {
   role = aws_iam_role.jenkins.name
 }
 
-# Non-secret: kept in sync with the Mongo instance's actual private IP on
-# every apply, so a redeploy never has to remember to update it by hand.
+# Non-secret: kept in sync with wherever Mongo actually runs on every apply,
+# so a redeploy never has to remember to update it by hand. While
+# colocate_db_with_backend is true (temporary vCPU-quota workaround), Mongo
+# runs on the backend instance itself; once it's false again, this points
+# back at the dedicated mongo instance.
 resource "aws_ssm_parameter" "mongo_host" {
   name  = "${var.ssm_parameter_prefix}/mongo_host"
   type  = "String"
-  value = aws_instance.mongo.private_ip
+  value = var.colocate_db_with_backend ? aws_instance.backend.private_ip : aws_instance.mongo[0].private_ip
 }
 
 # --- Data tier: self-hosted Mongo container on its own EC2 ---
+# Skipped (count = 0) while colocate_db_with_backend is true -- see that
+# variable's description for why and how to switch back.
 resource "aws_instance" "mongo" {
+  count                  = var.colocate_db_with_backend ? 0 : 1
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = var.mongo_instance_type
   subnet_id              = var.private_data_subnet_id
   vpc_security_group_ids = [var.data_sg_id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
@@ -214,6 +220,7 @@ resource "aws_instance" "mongo" {
 
   user_data = templatefile("${path.module}/templates/mongo_userdata.sh.tpl", {
     ssm_parameter_prefix = var.ssm_parameter_prefix
+    aws_region           = data.aws_region.current.name
   })
 
   tags = {
@@ -230,7 +237,11 @@ resource "aws_instance" "backend" {
   vpc_security_group_ids = [var.backend_sg_id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
 
-  user_data = file("${path.module}/templates/backend_userdata.sh.tpl")
+  user_data = templatefile("${path.module}/templates/backend_userdata.sh.tpl", {
+    colocate_db_with_backend = var.colocate_db_with_backend
+    ssm_parameter_prefix     = var.ssm_parameter_prefix
+    aws_region               = data.aws_region.current.name
+  })
 
   tags = {
     Name = "${var.project_name}-backend"
@@ -241,7 +252,7 @@ resource "aws_instance" "backend" {
 # --- App tier: frontend ---
 resource "aws_instance" "frontend" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = var.frontend_instance_type
   subnet_id              = var.private_app_subnet_id
   vpc_security_group_ids = [var.frontend_sg_id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
@@ -260,7 +271,7 @@ resource "aws_instance" "frontend" {
 # entry point and is the thing that proxies to frontend/backend. ---
 resource "aws_instance" "reverse_proxy" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
+  instance_type               = var.reverse_proxy_instance_type
   subnet_id                   = var.public_subnet_id
   vpc_security_group_ids      = [var.reverse_proxy_sg_id]
   associate_public_ip_address = true

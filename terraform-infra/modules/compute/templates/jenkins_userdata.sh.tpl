@@ -2,7 +2,10 @@
 set -euxo pipefail
 
 apt-get update -y
-apt-get install -y fontconfig openjdk-17-jre docker.io awscli
+# Jenkins requires a newer JDK than the LTS release names suggest -- verified
+# working: openjdk-21-jre (Jenkins 2.580.x requires Java 21 or 25 as of
+# 2026-10-31). Bump this if a future Jenkins release raises the minimum again.
+apt-get install -y fontconfig openjdk-21-jre docker.io awscli
 
 systemctl enable docker
 systemctl start docker
@@ -11,8 +14,12 @@ snap install amazon-ssm-agent --classic || true
 systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true
 systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service || true
 
-curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+# Jenkins rotates this signing key yearly under a dated filename (verified
+# working: jenkins.io-2026.key as of 2026-10-31) -- bump the year here if a
+# future replace of this instance hits "NO_PUBKEY" / "not signed" apt errors.
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key -o /etc/apt/keyrings/jenkins-keyring.asc
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | tee /etc/apt/sources.list.d/jenkins.list > /dev/null
 
 apt-get update -y
 apt-get install -y jenkins
