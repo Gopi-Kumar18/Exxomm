@@ -13,7 +13,9 @@ COPY --from=build /app/dist /usr/share/nginx/html
 
 # Rendered via nginx's built-in envsubst-on-templates entrypoint using
 # BACKEND_HOST/BACKEND_PORT from the container environment (see
-# docker-compose.yml) — no hardcoded backend address baked into the image.
+# docker-compose.yml). proxy_pass in the template uses a variable, so these
+# defaults being unresolvable in production (no dedicated backend hostname
+# there) doesn't stop nginx from starting -- see nginx.conf.template.
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV BACKEND_HOST=backend \
