@@ -96,11 +96,22 @@ resource "aws_security_group" "jenkins" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "Jenkins UI"
+    description = "Jenkins UI (direct)"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = [var.jenkins_admin_cidr]
+  }
+
+  # GitHub's webhook never talks to Jenkins directly -- it hits the
+  # already-public reverse proxy, which forwards internally over the VPC.
+  # This means Jenkins itself never needs to be open to the internet.
+  ingress {
+    description     = "GitHub webhook, forwarded via the reverse proxy"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.reverse_proxy.id]
   }
 
   egress {

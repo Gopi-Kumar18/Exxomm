@@ -24,6 +24,20 @@ server {
         proxy_redirect off;
     }
 
+    # GitHub webhook delivery, forwarded to Jenkins over the private network.
+    # Jenkins' own security group only accepts port 8080 from this
+    # instance's SG, not from the internet -- GitHub never talks to Jenkins
+    # directly, only to this already-public reverse proxy.
+    location /github-webhook/ {
+        proxy_pass http://${jenkins_private_ip}:8080/github-webhook/;
+        proxy_http_version 1.1;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $host;
+        proxy_redirect off;
+    }
+
     location / {
         proxy_pass http://${frontend_private_ip}:80;
         proxy_http_version 1.1;

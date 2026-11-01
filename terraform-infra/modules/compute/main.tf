@@ -186,6 +186,109 @@ resource "aws_iam_role_policy" "jenkins_deploy" {
   })
 }
 
+# Lets Jenkins run terraform init/plan/apply against this same project's
+# config, via its own Terraform pipeline -- scoped the same way the
+# terraform-exxomm bootstrap user is (role/instance-profile actions
+# restricted to this project's own exxomm-* names, PassRole restricted to
+# ec2.amazonaws.com), plus access to the shared S3 state bucket.
+resource "aws_iam_role_policy" "jenkins_terraform" {
+  name = "${var.project_name}-jenkins-terraform"
+  role = aws_iam_role.jenkins.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "EC2Networking"
+        Effect   = "Allow"
+        Action   = "ec2:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "ECR"
+        Effect = "Allow"
+        Action = [
+          "ecr:CreateRepository",
+          "ecr:DeleteRepository",
+          "ecr:DescribeRepositories",
+          "ecr:PutImageScanningConfiguration",
+          "ecr:TagResource",
+          "ecr:ListTagsForResource",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SSMParams"
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:GetParametersByPath",
+          "ssm:DeleteParameter",
+          "ssm:AddTagsToResource",
+          "ssm:ListTagsForResource",
+          "ssm:DescribeParameters",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "IAMManage"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:GetRole",
+          "iam:DeleteRole",
+          "iam:TagRole",
+          "iam:PutRolePolicy",
+          "iam:GetRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListRolePolicies",
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
+      },
+      {
+        Sid    = "IAMInstanceProfiles"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:GetInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:TagInstanceProfile",
+        ]
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.project_name}-*"
+      },
+      {
+        Sid      = "PassRoleToEC2"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
+        Condition = {
+          StringEquals = { "iam:PassedToService" = "ec2.amazonaws.com" }
+        }
+      },
+      {
+        Sid    = "TerraformStateBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.terraform_state_bucket}",
+          "arn:aws:s3:::${var.terraform_state_bucket}/*",
+        ]
+      },
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "jenkins" {
   name = "${var.project_name}-jenkins-profile"
   role = aws_iam_role.jenkins.name
@@ -277,10 +380,15 @@ resource "aws_instance" "reverse_proxy" {
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.ec2.name
 
+  # Depends on aws_instance.jenkins now too (for the webhook-forwarding
+  # location block), same staleness caveat as frontend/backend: if jenkins
+  # is ever replaced, this instance needs a -replace too to pick up its
+  # new private IP.
   user_data = templatefile("${path.module}/templates/reverse_proxy_userdata.sh.tpl", {
     frontend_private_ip = aws_instance.frontend.private_ip
     backend_private_ip  = aws_instance.backend.private_ip
     backend_port        = var.backend_port
+    jenkins_private_ip  = aws_instance.jenkins.private_ip
   })
 
   tags = {

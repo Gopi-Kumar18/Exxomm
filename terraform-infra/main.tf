@@ -1,5 +1,13 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.10"
+
+  backend "s3" {
+    bucket       = "exxomm-terraform-state-495392543717"
+    key          = "webapp/terraform.tfstate"
+    region       = "ap-south-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 
   required_providers {
     aws = {
@@ -46,6 +54,7 @@ module "compute" {
   jenkins_instance_type       = var.jenkins_instance_type
   backend_port                = var.backend_port
   ssm_parameter_prefix        = var.ssm_parameter_prefix
+  terraform_state_bucket      = var.terraform_state_bucket
   public_subnet_id            = module.networking.public_subnet_ids[0]
   private_app_subnet_id       = module.networking.private_app_subnet_ids[0]
   private_data_subnet_id      = module.networking.private_data_subnet_ids[0]

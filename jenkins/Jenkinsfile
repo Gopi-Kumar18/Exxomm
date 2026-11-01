@@ -13,6 +13,8 @@ pipeline {
     string(name: 'BACKEND_INSTANCE_ID', defaultValue: '', description: 'terraform output backend_instance_id')
     string(name: 'FRONTEND_INSTANCE_ID', defaultValue: '', description: 'terraform output frontend_instance_id')
     string(name: 'REVERSE_PROXY_URL', defaultValue: '', description: 'http://<terraform output reverse_proxy_public_ip>')
+    string(name: 'JENKINS_ADMIN_CIDR', defaultValue: '0.0.0.0/0', description: 'terraform var.jenkins_admin_cidr -- passed explicitly on every Terraform Plan so an omitted value never silently drifts the Jenkins SG back to the variable default')
+    booleanParam(name: 'FORCE_ALL_STAGES', defaultValue: false, description: 'Run every stage regardless of changeset -- needed for the first build, or any build Jenkins has no changelog for (see Jenkinsfile comment above the Terraform stages)')
   }
 
   environment {
@@ -26,9 +28,71 @@ pipeline {
       }
     }
 
+    // Terraform stages only run when terraform-infra/ actually changed in
+    // this commit (or FORCE_ALL_STAGES is set -- use that for the first
+    // build, or any build Jenkins has no changelog for, per the project's
+    // migration README). This keeps routine app-only commits from ever
+    // touching infrastructure state.
+    stage('Terraform Format Check') {
+      when { anyOf { changeset "terraform-infra/**"; expression { params.FORCE_ALL_STAGES } } }
+      steps {
+        dir('terraform-infra') {
+          sh 'terraform fmt -check -recursive'
+        }
+      }
+    }
+
+    stage('Terraform Init') {
+      when { anyOf { changeset "terraform-infra/**"; expression { params.FORCE_ALL_STAGES } } }
+      steps {
+        dir('terraform-infra') {
+          sh 'terraform init -input=false'
+        }
+      }
+    }
+
+    stage('Terraform Validate') {
+      when { anyOf { changeset "terraform-infra/**"; expression { params.FORCE_ALL_STAGES } } }
+      steps {
+        dir('terraform-infra') {
+          sh 'terraform validate'
+        }
+      }
+    }
+
+    stage('Terraform Plan') {
+      when { anyOf { changeset "terraform-infra/**"; expression { params.FORCE_ALL_STAGES } } }
+      steps {
+        dir('terraform-infra') {
+          sh "terraform plan -input=false -var=\"jenkins_admin_cidr=${params.JENKINS_ADMIN_CIDR}\" -out=tfplan"
+        }
+      }
+    }
+
+    // Never auto-apply unreviewed infrastructure changes -- a human must
+    // read the plan output above and approve it explicitly.
+    stage('Approve Infrastructure Changes') {
+      when { anyOf { changeset "terraform-infra/**"; expression { params.FORCE_ALL_STAGES } } }
+      steps {
+        dir('terraform-infra') {
+          input message: 'Review the Terraform plan above before applying infrastructure changes.', ok: 'Approve'
+        }
+      }
+    }
+
+    stage('Terraform Apply') {
+      when { anyOf { changeset "terraform-infra/**"; expression { params.FORCE_ALL_STAGES } } }
+      steps {
+        dir('terraform-infra') {
+          sh 'terraform apply -input=false tfplan'
+        }
+      }
+    }
+
     // No lint script exists in either app yet -- this confirms the lockfiles
     // actually install cleanly before spending time building/testing.
     stage('Validate') {
+      when { anyOf { changeset "exxomm-be/**"; changeset "exxomm-fe/**"; expression { params.FORCE_ALL_STAGES } } }
       parallel {
         stage('Backend') {
           steps {
@@ -50,6 +114,7 @@ pipeline {
     // Runs against source directly (not the production image, which has no
     // devDependencies) so a failing test never produces a pushed image.
     stage('Test') {
+      when { anyOf { changeset "exxomm-be/**"; changeset "exxomm-fe/**"; expression { params.FORCE_ALL_STAGES } } }
       parallel {
         stage('Backend Tests') {
           steps {
@@ -69,6 +134,7 @@ pipeline {
     }
 
     stage('ECR Login') {
+      when { anyOf { changeset "exxomm-be/**"; changeset "exxomm-fe/**"; expression { params.FORCE_ALL_STAGES } } }
       steps {
         sh "aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${params.BACKEND_ECR_REPO.split('/')[0]}"
       }
@@ -77,6 +143,7 @@ pipeline {
     // Separate build/push per app so one image failing doesn't silently
     // leave the other half-deployed later.
     stage('Build & Push') {
+      when { anyOf { changeset "exxomm-be/**"; changeset "exxomm-fe/**"; expression { params.FORCE_ALL_STAGES } } }
       parallel {
         stage('Backend Image') {
           steps {
@@ -107,6 +174,7 @@ pipeline {
     // instance's own IAM role (not Jenkins) pulls from ECR and reads its
     // secrets from SSM Parameter Store.
     stage('Deploy') {
+      when { anyOf { changeset "exxomm-be/**"; changeset "exxomm-fe/**"; changeset "jenkins/scripts/**"; expression { params.FORCE_ALL_STAGES } } }
       parallel {
         stage('Deploy Backend') {
           steps {
@@ -121,7 +189,19 @@ pipeline {
       }
     }
 
+    // Also runs after an infra-only change (not just app changes) -- a
+    // Terraform apply (e.g. a security-group rule) can affect reachability
+    // just as much as a new app image can.
     stage('Health Check') {
+      when {
+        anyOf {
+          changeset "exxomm-be/**"
+          changeset "exxomm-fe/**"
+          changeset "jenkins/scripts/**"
+          changeset "terraform-infra/**"
+          expression { params.FORCE_ALL_STAGES }
+        }
+      }
       steps {
         sh "bash jenkins/scripts/health-check.sh '${params.REVERSE_PROXY_URL}'"
       }

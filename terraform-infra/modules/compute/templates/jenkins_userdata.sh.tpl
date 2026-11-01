@@ -5,10 +5,15 @@ apt-get update -y
 # Jenkins requires a newer JDK than the LTS release names suggest -- verified
 # working: openjdk-21-jre (Jenkins 2.580.x requires Java 21 or 25 as of
 # 2026-10-31). Bump this if a future Jenkins release raises the minimum again.
-apt-get install -y fontconfig openjdk-21-jre docker.io awscli
+apt-get install -y fontconfig openjdk-21-jre docker.io awscli unzip
 
 systemctl enable docker
 systemctl start docker
+
+# Terraform for the pipeline's own Terraform Init/Plan/Apply stages.
+curl -fsSL https://releases.hashicorp.com/terraform/1.16.5/terraform_1.16.5_linux_amd64.zip -o /tmp/terraform.zip
+unzip -o /tmp/terraform.zip -d /usr/local/bin
+rm -f /tmp/terraform.zip
 
 snap install amazon-ssm-agent --classic || true
 systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true

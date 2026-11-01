@@ -85,6 +85,12 @@ variable "mongo_port" {
   default = 27017
 }
 
+variable "terraform_state_bucket" {
+  description = "S3 bucket holding the project's own Terraform state, so Jenkins' IAM role can be granted exactly the access it needs to run terraform init/plan/apply against it."
+  type        = string
+  default     = "exxomm-terraform-state-495392543717"
+}
+
 variable "ssm_parameter_prefix" {
   description = "Path prefix under which Jenkins/ops store app secrets in AWS SSM Parameter Store."
   type        = string

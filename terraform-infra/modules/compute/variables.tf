@@ -76,6 +76,12 @@ variable "backend_port" {
   default = 3000
 }
 
+variable "terraform_state_bucket" {
+  description = "S3 bucket holding the project's own Terraform state, so Jenkins' IAM role can be granted exactly the access it needs to run terraform init/plan/apply against it."
+  type        = string
+  default     = "exxomm-terraform-state-495392543717"
+}
+
 variable "ssm_parameter_prefix" {
   description = "Path prefix under which Jenkins/ops store app secrets in AWS SSM Parameter Store (e.g. /exxomm/prod/mongo_user). Terraform never writes the secret values themselves -- it only grants EC2 instances read access to this path, same split as the local .env vs Jenkins-credentials setup."
   type        = string
