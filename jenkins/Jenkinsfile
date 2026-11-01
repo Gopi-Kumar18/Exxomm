@@ -13,7 +13,7 @@ pipeline {
     string(name: 'BACKEND_INSTANCE_ID', defaultValue: '', description: 'terraform output backend_instance_id')
     string(name: 'FRONTEND_INSTANCE_ID', defaultValue: '', description: 'terraform output frontend_instance_id')
     string(name: 'REVERSE_PROXY_URL', defaultValue: '', description: 'http://<terraform output reverse_proxy_public_ip>')
-    string(name: 'JENKINS_ADMIN_CIDR', defaultValue: '0.0.0.0/0', description: 'terraform var.jenkins_admin_cidr -- passed explicitly on every Terraform Plan so an omitted value never silently drifts the Jenkins SG back to the variable default')
+    string(name: 'JENKINS_ADMIN_CIDR', defaultValue: '49.205.115.168/32', description: 'terraform var.jenkins_admin_cidr -- your own IP for direct Jenkins UI access only. Does NOT need to be 0.0.0.0/0: GitHub webhook delivery reaches Jenkins through the reverse-proxy forwarding path instead, via a separate SG rule, so this stays restricted even on webhook-triggered builds that cannot override it interactively.')
     booleanParam(name: 'FORCE_ALL_STAGES', defaultValue: false, description: 'Run every stage regardless of changeset -- needed for the first build, or any build Jenkins has no changelog for (see Jenkinsfile comment above the Terraform stages)')
   }
 
