@@ -8,11 +8,6 @@ pipeline {
 
   parameters {
     string(name: 'AWS_REGION', defaultValue: 'ap-south-1', description: 'AWS region (terraform var.aws_region)')
-    string(name: 'BACKEND_ECR_REPO', defaultValue: '', description: 'terraform output backend_ecr_repository_url')
-    string(name: 'FRONTEND_ECR_REPO', defaultValue: '', description: 'terraform output frontend_ecr_repository_url')
-    string(name: 'BACKEND_INSTANCE_ID', defaultValue: '', description: 'terraform output backend_instance_id')
-    string(name: 'FRONTEND_INSTANCE_ID', defaultValue: '', description: 'terraform output frontend_instance_id')
-    string(name: 'REVERSE_PROXY_URL', defaultValue: '', description: 'http://<terraform output reverse_proxy_public_ip>')
     string(name: 'JENKINS_ADMIN_CIDR', defaultValue: '49.205.115.168/32', description: 'terraform var.jenkins_admin_cidr -- your own IP for direct Jenkins UI access only. Does NOT need to be 0.0.0.0/0: GitHub webhook delivery reaches Jenkins through the reverse-proxy forwarding path instead, via a separate SG rule, so this stays restricted even on webhook-triggered builds that cannot override it interactively.')
     booleanParam(name: 'FORCE_ALL_STAGES', defaultValue: false, description: 'Run every stage regardless of changeset -- needed for the first build, or any build Jenkins has no changelog for (see Jenkinsfile comment above the Terraform stages)')
   }
@@ -94,6 +89,29 @@ pipeline {
       }
     }
 
+    // Always runs, unconditionally -- every later stage needs these five
+    // values, and they must never be hand-typed or hardcoded (an empty or
+    // stale default here breaks every webhook-triggered build silently,
+    // since an automatic trigger can't be prompted for parameters the way
+    // "Build with Parameters" can -- this happened for real, see build
+    // #11). Reading them straight from Terraform's own state instead means
+    // they're always correct, even right after Terraform Apply replaces an
+    // instance in this same run.
+    stage('Read Infra Outputs') {
+      steps {
+        dir('terraform-infra') {
+          sh 'terraform init -input=false'
+          script {
+            env.BACKEND_ECR_REPO     = sh(script: 'terraform output -raw backend_ecr_repository_url', returnStdout: true).trim()
+            env.FRONTEND_ECR_REPO    = sh(script: 'terraform output -raw frontend_ecr_repository_url', returnStdout: true).trim()
+            env.BACKEND_INSTANCE_ID  = sh(script: 'terraform output -raw backend_instance_id', returnStdout: true).trim()
+            env.FRONTEND_INSTANCE_ID = sh(script: 'terraform output -raw frontend_instance_id', returnStdout: true).trim()
+            env.REVERSE_PROXY_URL    = 'http://' + sh(script: 'terraform output -raw reverse_proxy_public_ip', returnStdout: true).trim()
+          }
+        }
+      }
+    }
+
     // No lint script exists in either app yet -- this confirms the lockfiles
     // actually install cleanly before spending time building/testing.
     stage('Validate') {
@@ -141,7 +159,7 @@ pipeline {
     stage('ECR Login') {
       when { anyOf { changeset "exxomm-be/**"; changeset "exxomm-fe/**"; changeset "jenkins/Jenkinsfile"; expression { params.FORCE_ALL_STAGES } } }
       steps {
-        sh "aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${params.BACKEND_ECR_REPO.split('/')[0]}"
+        sh "aws ecr get-login-password --region ${params.AWS_REGION} | docker login --username AWS --password-stdin ${env.BACKEND_ECR_REPO.split('/')[0]}"
       }
     }
 
@@ -154,9 +172,9 @@ pipeline {
           steps {
             dir('exxomm-be') {
               sh """
-                docker build -t ${params.BACKEND_ECR_REPO}:${IMAGE_TAG} -t ${params.BACKEND_ECR_REPO}:latest .
-                docker push ${params.BACKEND_ECR_REPO}:${IMAGE_TAG}
-                docker push ${params.BACKEND_ECR_REPO}:latest
+                docker build -t ${env.BACKEND_ECR_REPO}:${IMAGE_TAG} -t ${env.BACKEND_ECR_REPO}:latest .
+                docker push ${env.BACKEND_ECR_REPO}:${IMAGE_TAG}
+                docker push ${env.BACKEND_ECR_REPO}:latest
               """
             }
           }
@@ -165,9 +183,9 @@ pipeline {
           steps {
             dir('exxomm-fe') {
               sh """
-                docker build -t ${params.FRONTEND_ECR_REPO}:${IMAGE_TAG} -t ${params.FRONTEND_ECR_REPO}:latest .
-                docker push ${params.FRONTEND_ECR_REPO}:${IMAGE_TAG}
-                docker push ${params.FRONTEND_ECR_REPO}:latest
+                docker build -t ${env.FRONTEND_ECR_REPO}:${IMAGE_TAG} -t ${env.FRONTEND_ECR_REPO}:latest .
+                docker push ${env.FRONTEND_ECR_REPO}:${IMAGE_TAG}
+                docker push ${env.FRONTEND_ECR_REPO}:latest
               """
             }
           }
@@ -183,12 +201,12 @@ pipeline {
       parallel {
         stage('Deploy Backend') {
           steps {
-            sh "bash jenkins/scripts/deploy-via-ssm.sh '${params.BACKEND_INSTANCE_ID}' jenkins/scripts/deploy-backend.sh '${params.BACKEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
+            sh "bash jenkins/scripts/deploy-via-ssm.sh '${env.BACKEND_INSTANCE_ID}' jenkins/scripts/deploy-backend.sh '${env.BACKEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
           }
         }
         stage('Deploy Frontend') {
           steps {
-            sh "bash jenkins/scripts/deploy-via-ssm.sh '${params.FRONTEND_INSTANCE_ID}' jenkins/scripts/deploy-frontend.sh '${params.FRONTEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
+            sh "bash jenkins/scripts/deploy-via-ssm.sh '${env.FRONTEND_INSTANCE_ID}' jenkins/scripts/deploy-frontend.sh '${env.FRONTEND_ECR_REPO}:${IMAGE_TAG}' '${params.AWS_REGION}'"
           }
         }
       }
@@ -209,7 +227,7 @@ pipeline {
         }
       }
       steps {
-        sh "bash jenkins/scripts/health-check.sh '${params.REVERSE_PROXY_URL}'"
+        sh "bash jenkins/scripts/health-check.sh '${env.REVERSE_PROXY_URL}'"
       }
     }
   }

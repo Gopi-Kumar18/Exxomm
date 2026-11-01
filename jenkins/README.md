@@ -58,29 +58,37 @@ terraform init
 terraform apply
 ```
 
-Keep the outputs handy -- they feed the pipeline parameters below:
+The Jenkinsfile's own **"Read Infra Outputs"** stage reads
 `backend_ecr_repository_url`, `frontend_ecr_repository_url`,
-`backend_instance_id`, `frontend_instance_id`, `reverse_proxy_public_ip`.
+`backend_instance_id`, `frontend_instance_id`, and `reverse_proxy_public_ip`
+straight from this same Terraform state on every single build (via
+`terraform output`) -- nothing to copy by hand, and it can never go stale,
+even right after a same-run `Terraform Apply` replaces an instance.
 
 ### 3. Jenkins job setup
 
 - Install plugins: **Pipeline**, **Git**. No AWS credentials plugin is
   needed -- the Jenkins EC2's own IAM role (from `terraform-infra`) already
-  grants ECR push and SSM deploy permissions, per requirement #7.
+  grants ECR push, SSM deploy, and Terraform-apply permissions, per
+  requirement #7.
 - Create a Pipeline job pointing at this repo, and set the job's
   **"Script Path"** (under Pipeline > Definition: *Pipeline script from
   SCM*) to `jenkins/Jenkinsfile`, since the file no longer lives at the
   repo root.
 - If the GitHub repo is private, add a Jenkins credential (username/PAT or
   SSH key) and select it in the job's SCM configuration.
-- Fill in the job's pipeline parameters (or set defaults in the job config)
-  from the Terraform outputs in step 1:
-  `BACKEND_ECR_REPO`, `FRONTEND_ECR_REPO`, `BACKEND_INSTANCE_ID`,
-  `FRONTEND_INSTANCE_ID`, `REVERSE_PROXY_URL` (as `http://<ip>`).
-- Add a GitHub webhook (`http://<jenkins-public-ip>:8080/github-webhook/`)
-  so a commit triggers the pipeline automatically, per the success
-  criterion ("a code commit triggers the pipeline and deploys the updated
-  application without manually provisioning infrastructure").
+- The only pipeline parameters left are `AWS_REGION`, `JENKINS_ADMIN_CIDR`
+  (your own IP, for direct UI access only), and `FORCE_ALL_STAGES` (set
+  `true` for the very first build, since Jenkins has no changelog yet for
+  the `changeset` conditions to diff against).
+- Add a GitHub webhook pointing at the **reverse-proxy**, not Jenkins
+  directly: `http://<reverse-proxy-public-ip>/github-webhook/` (port 80,
+  forwarded internally to Jenkins over the private network -- Jenkins'
+  own security group never needs to be open to the internet). Enable
+  **"GitHub hook trigger for GITScm polling"** in the job's Build Triggers.
+  This satisfies the success criterion ("a code commit triggers the
+  pipeline and deploys the updated application without manually
+  provisioning infrastructure").
 
 ## Rollback
 
