@@ -1,80 +1,51 @@
-# Exxomm: Automated CI/CD Pipeline for a Web Application
+# Exxomm — Automated CI/CD Pipeline for a Web Application on AWS
 
-This repository provisions AWS infrastructure with Terraform and deploys the Exxomm MERN web application automatically via a Jenkins CI/CD pipeline.
+This repository provisions AWS infrastructure with **Terraform** and
+delivers the Exxomm MERN web application with a **Jenkins** CI/CD
+pipeline. Application source, Terraform configuration, and the
+Jenkinsfile all live in this one GitHub repository.
 
----
+**Full documentation (architecture, workflows, screenshots, setup,
+known limitations):**
+[`docs/docs_ss/project-documentation.html`](docs/docs_ss/project-documentation.html)
+— open it in a browser, or print it to PDF.
 
-## 🎯 Project Objective
+This file just orients you around the repo. For the two moving parts
+specifically:
 
-Build a pipeline that provisions AWS infrastructure using Terraform and deploys a web application automatically using Jenkins.
-
-**Success criteria:** a code commit triggers the pipeline and deploys the updated application without manually provisioning infrastructure.
-
----
-
-## 🏗️ Architecture Overview
-
-* **Reverse Proxy (public subnet):** Nginx EC2 instance — the only public entry point. Routes requests to the frontend and backend.
-* **Jenkins (public subnet):** CI/CD server — checks out code, builds, tests, and deploys on every commit.
-* **Frontend / Backend (app tier):** React frontend and Node/Express backend, containerized with Docker.
-* **MongoDB:** runs as a Docker container alongside the backend (no managed database service).
-* **Security Groups:** zero-trust model — app servers accept traffic only from the reverse proxy; the reverse proxy is the only instance open to the internet.
-
-See `terraform-infra/` for the Terraform configuration and the architecture diagram for the full network layout.
+- **Terraform** — what it provisions and how it gets permission to do
+  so: [`terraform-infra/README.md`](terraform-infra/README.md)
+- **Jenkins** — what triggers it, what it's allowed to do, and how:
+  [`jenkins/README.md`](jenkins/README.md)
 
 ---
 
-## 🛠️ Technology Stack
+## Repository layout
 
-| Layer          | Tool              | Purpose                                |
-| -------------- | ----------------- | --------------------------------------- |
-| Infrastructure | Terraform         | Creates VPC, Subnets, EC2s, EIP, SGs   |
-| CI/CD          | Jenkins           | Checkout, build, test, deploy on commit |
-| Containers     | Docker            | Packages frontend, backend, and MongoDB |
-| Gateway        | Nginx             | Reverse proxy & internal router         |
-| Database       | MongoDB           | Containerized data storage              |
-
----
-
-## ⚙️ Deployment Workflow
-
-### Phase 1 — Provision Infrastructure (Terraform)
-
-Run inside the `terraform-infra/` folder:
-
-```bash
-terraform init
-terraform plan
-terraform apply -auto-approve
+```
+Exxomm-Devops-Automation/
+├── README.md                      ← this file
+├── docker-compose.yml             ← local dev only, not used by Jenkins
+├── docs/
+│   ├── architecture-diagram.html
+│   └── docs_ss/
+│       └── project-documentation.html   ← the full writeup + real screenshots
+├── exxomm-be/                     ← Node/Express backend + Jest tests
+├── exxomm-fe/                     ← React frontend + Vitest tests
+├── jenkins/
+│   ├── Jenkinsfile                ← the one pipeline, both flows
+│   ├── README.md                  ← Jenkins' own role, permissions, stages
+│   └── scripts/                   ← deploy-via-ssm.sh, deploy-backend.sh, deploy-frontend.sh, health-check.sh
+└── terraform-infra/
+    ├── README.md                  ← what Terraform provisions, permissions
+    ├── main.tf, variables.tf, outputs.tf
+    ├── terraform.tfvars.example
+    └── modules/
+        ├── networking/  (VPC, subnets, route tables — the required module)
+        ├── security/    (all security groups)
+        └── compute/     (EC2 instances, ECR, IAM roles, SSM parameter)
 ```
 
-**Outcome:** VPC, subnets, security groups, and EC2 instances (Reverse Proxy, Jenkins, Frontend, Backend), with an Elastic IP bound to the proxy.
-
-### Phase 2 — Automated Build & Deploy (Jenkins)
-
-The Jenkins pipeline (see `jenkins/Jenkinsfile`) runs on every push to the repository:
-
-1. **Checkout** — pull the latest source from GitHub.
-2. **Validate** — lint/sanity checks.
-3. **Build** — build Docker images for frontend and backend.
-4. **Test** — run application tests.
-5. **Deploy** — ship the updated containers to the application EC2 instance.
-6. **Verify** — run a health check against the deployed application.
-
-Sensitive values (SSH keys, AWS credentials, app secrets) are stored in Jenkins credentials and AWS IAM roles — never committed to the repository.
-
----
-
-## 🌐 Traffic Flow Summary
-
-1. User visits the Elastic IP (port 80).
-2. The reverse proxy receives and interprets the request.
-3. The proxy forwards it internally to the frontend/backend over the private network.
-4. Security groups validate that traffic originates from the proxy.
-5. The frontend/backend containers serve the request; the backend talks to the MongoDB container.
-
----
-
-## 📜 License & Credits
-
-Designed and implemented as a comprehensive DevOps project. Replace with your details where needed.
+For anything beyond "where is it" — architecture, workflows, setup
+steps, IAM permissions, known tradeoffs — see the full PDF/HTML doc or
+the two component READMEs linked above.
